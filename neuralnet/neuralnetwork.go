@@ -1,14 +1,17 @@
-package main
+package neuralnet
 
 import (
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"golang.org/x/exp/rand"
 	"gonum.org/v1/gonum/stat/distuv"
 	"gopkg.in/yaml.v3"
 	"math"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 )
 
 type NeuralNetwork struct {
@@ -17,31 +20,28 @@ type NeuralNetwork struct {
 	Onodes       int
 	Learningrate float64
 	TrainingStep uint64
-	Wih          *Weights `yaml:"Wih"`
-	Who          *Weights `yaml:"Who"`
+	Wih          [][]float64 `yaml:"Wih,flow"` // "flow" ensures that yaml stores the weights in a single line
+	Who          [][]float64 `yaml:"Who,flow"`
 }
 
-type Weights struct {
-	WeightArray [][]float64 `yaml:"WeightArray,flow"`
-}
-
+/*
+Initializes a new neural network with the specified layer sizes and learning rate. TrainingStep is initialized with 0,
+Wih and Who are initialized with a random gaussian distribution
+*/
 func NewNeuralNetwork(inodes, hnodes, onodes int, learningrate float64) *NeuralNetwork {
+	//Preparation of gaussian distribution function for Wih and Who
 	wihNormal := distuv.Normal{0, math.Pow(float64(hnodes), -0.5), rand.NewSource(0)}
 	whoNormal := distuv.Normal{0, math.Pow(float64(onodes), -0.5), rand.NewSource(0)}
 	wih := CreateWeights(hnodes, inodes, wihNormal.Rand)
 	who := CreateWeights(onodes, hnodes, whoNormal.Rand)
-	return &NeuralNetwork{inodes, hnodes, onodes, learningrate, 0, &wih, &who}
-}
-
-func NewWeights(weightArray [][]float64) *Weights {
-	return &Weights{weightArray}
+	return &NeuralNetwork{inodes, hnodes, onodes, learningrate, 0, wih, who}
 }
 
 /*
 Creates a 2D matrix with shape "rows" x "columns". Fills default values using the fill function.
 If no fill function is provided, matrix is initialized without values.
 */
-func CreateWeights(rows, columns int, fill func() float64) Weights {
+func CreateWeights(rows, columns int, fill func() float64) [][]float64 {
 	var data [][]float64 = make([][]float64, rows)
 	for i, _ := range data {
 		data[i] = make([]float64, columns)
@@ -51,11 +51,11 @@ func CreateWeights(rows, columns int, fill func() float64) Weights {
 			}
 		}
 	}
-	return Weights{data}
+	return data
 }
 
 /*
-Returns the number of training steps done so far
+Returns the number of training steps done so far.
 */
 func (n NeuralNetwork) GetTrainingSteps() uint64 {
 	return n.TrainingStep
@@ -63,19 +63,21 @@ func (n NeuralNetwork) GetTrainingSteps() uint64 {
 
 /*
 Stores all neuralnet parameters in a YAML file.
+Compatible with LoadNeuralNet.
 */
-func (n NeuralNetwork) StoreWeights(filePath string) error {
+func (n NeuralNetwork) StoreNeuralNet(filePath string) error {
 	yamlData, err := yaml.Marshal(&n)
 	if err != nil {
 		return err
 	}
-	//fmt.Println(string(yamlData))
-
 	err = os.WriteFile(filePath, yamlData, 0644)
 	return err
 }
 
-func LoadWeights(filePath string) (*NeuralNetwork, error) {
+/*
+Loads a neural net stored in a yaml file located in `filePath`. Should have been created with StoreNeuralNet.
+*/
+func LoadNeuralNet(filePath string) (*NeuralNetwork, error) {
 	var n NeuralNetwork
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -88,13 +90,13 @@ func LoadWeights(filePath string) (*NeuralNetwork, error) {
 }
 
 /*
-Logistic Sigmoid for a float
+Logistic Sigmoid for a float64
 */
 func expit(x float64) float64 {
 	return 1 / (1 + math.Exp(-x))
 }
 
-func (n NeuralNetwork) ActivationFunction(array [][]float64) [][]float64 {
+func ActivationFunction(array [][]float64) [][]float64 {
 	var outArray = make([][]float64, len(array))
 	for i, _ := range outArray {
 		outArray[i] = make([]float64, len(array[i]))
@@ -105,96 +107,61 @@ func (n NeuralNetwork) ActivationFunction(array [][]float64) [][]float64 {
 	return outArray
 }
 
-func TransposeArray(array []float64) [][]float64 {
-	var arrayTransposed [][]float64 = make([][]float64, len(array))
-	for i, _ := range arrayTransposed {
-		arrayTransposed[i] = []float64{array[i]}
-	}
-	return arrayTransposed
-}
+/*
+Performs a training step for a single sample. Returns a new neural network object that contains the new training progress
 
-func TransposeMatrix(array [][]float64) [][]float64 {
-	if len(array) < 1 {
-		return array
-	}
-	var arrayTransposed [][]float64 = make([][]float64, len(array[0]))
-	for i, _ := range arrayTransposed {
-		arrayTransposed[i] = make([]float64, len(array))
-		for j, _ := range arrayTransposed[i] {
-			arrayTransposed[i][j] = array[j][i]
-		}
-	}
-	return arrayTransposed
-}
-
-func DotProduct(matrixA, matrixB [][]float64) [][]float64 {
-	var outMatrix [][]float64 = make([][]float64, len(matrixA))
-	for i, _ := range matrixA {
-		outMatrix[i] = make([]float64, len(matrixB[0]))
-		for j, _ := range matrixB[0] {
-			var sum float64 = 0
-			for k, _ := range matrixB {
-				sum += matrixA[i][k] * matrixB[k][j]
-			}
-			outMatrix[i][j] = sum
-		}
-	}
-	return outMatrix
-}
-
-func MatrixOperation(matrixA, matrixB [][]float64, operator func(float64, float64) float64) [][]float64 {
-	var outMatrix [][]float64 = make([][]float64, len(matrixA))
-	for i, _ := range matrixA {
-		outMatrix[i] = make([]float64, len(matrixA[i]))
-		for j, _ := range matrixB[i] {
-			outMatrix[i][j] = operator(matrixA[i][j], matrixB[i][j])
-		}
-	}
-	return outMatrix
-}
-
+inputs: image, in the form of a single array
+targets: one-hot encoded target value (should be in [0.0001,0.9999]
+*/
 func (n NeuralNetwork) Train(inputs []float64, targets []float64) *NeuralNetwork {
 	var inputsTransposed = TransposeArray(inputs)
 	var targetsTransposed = TransposeArray(targets)
 
-	var hiddenInputs = DotProduct(n.Wih.WeightArray, inputsTransposed)
-	var hiddenOutputs = n.ActivationFunction(hiddenInputs)
+	var hiddenInputs = DotProduct(n.Wih, inputsTransposed)
+	var hiddenOutputs = ActivationFunction(hiddenInputs)
 
-	var finalInputs = DotProduct(n.Who.WeightArray, hiddenOutputs)
-	var finalOutputs = n.ActivationFunction(finalInputs)
+	var finalInputs = DotProduct(n.Who, hiddenOutputs)
+	var finalOutputs = ActivationFunction(finalInputs)
 
 	var outputErrors [][]float64 = MatrixOperation(targetsTransposed, finalOutputs, func(a float64, b float64) float64 {
 		return a - b
 	})
-	var hiddenErrors = DotProduct(TransposeMatrix(n.Who.WeightArray), outputErrors)
-	// who = who + learningrate * Dot(output*finalOutput*(1.0-finalOutput), hiddenOutput.Tranpose)
-	who := &Weights{MatrixOperation(n.Who.WeightArray, DotProduct(MatrixOperation(outputErrors, finalOutputs, func(a float64, b float64) float64 {
+	var hiddenErrors = DotProduct(TransposeMatrix(n.Who), outputErrors)
+	/*
+		Read the lines below like this:
+			who = who + learningrate * Dot(output*finalOutput*(1.0-finalOutput), hiddenOutput.Tranpose)
+	*/
+	who := MatrixOperation(n.Who, DotProduct(MatrixOperation(outputErrors, finalOutputs, func(a float64, b float64) float64 {
 		return a * b * (1.0 - b)
 	}), TransposeMatrix(hiddenOutputs)),
 		func(a float64, b float64) float64 {
 			return a + (n.Learningrate)*b
-		})}
+		})
 
-	wih := &Weights{MatrixOperation(n.Wih.WeightArray, DotProduct(MatrixOperation(hiddenErrors, hiddenOutputs, func(a float64, b float64) float64 {
+	wih := MatrixOperation(n.Wih, DotProduct(MatrixOperation(hiddenErrors, hiddenOutputs, func(a float64, b float64) float64 {
 		return a * b * (1.0 - b)
 	}), TransposeMatrix(inputsTransposed)),
 		func(a float64, b float64) float64 {
 			return a + n.Learningrate*b
-		})}
+		})
 	return &NeuralNetwork{Inodes: n.Inodes, Hnodes: n.Hnodes, Onodes: n.Onodes, Learningrate: n.Learningrate, TrainingStep: n.TrainingStep + 1, Wih: wih, Who: who}
 }
 
+/*
+Returns the model's output layer values after processing the provided input
+*/
 func (n NeuralNetwork) Query(inputs []float64) [][]float64 {
 	var inputsTransposed = TransposeArray(inputs)
-	var hiddenInputs = DotProduct(n.Wih.WeightArray, inputsTransposed)
-	var hiddenOutputs = n.ActivationFunction(hiddenInputs)
-	var finalInputs = DotProduct(n.Who.WeightArray, hiddenOutputs)
-	var finalOutputs = n.ActivationFunction(finalInputs)
+	var hiddenInputs = DotProduct(n.Wih, inputsTransposed)
+	var hiddenOutputs = ActivationFunction(hiddenInputs)
+	var finalInputs = DotProduct(n.Who, hiddenOutputs)
+	var finalOutputs = ActivationFunction(finalInputs)
 	return finalOutputs
 }
 
 /*
 Returns the number of correctly classified samples and the number of provided samples
+TODO: Parallelize
 */
 func (n NeuralNetwork) Validate(inputs [][]float64, labels []int) (int, int) {
 	classifications := []float64{}
@@ -215,10 +182,10 @@ func (n NeuralNetwork) Validate(inputs [][]float64, labels []int) (int, int) {
 Returns the top level index of the subarray with the highest value
 */
 func Argmax(values [][]float64) int {
-	curMax := -1e100
+	curMax := values[0][0]
 	index := 0
 	for i, _ := range values {
-		localMax := -1e100
+		localMax := values[i][0]
 		for j, _ := range values[i] {
 			if values[i][j] > localMax {
 				localMax = values[i][j]
@@ -232,7 +199,11 @@ func Argmax(values [][]float64) int {
 	return index
 }
 
-func prepareTrainLabels(rawData [][]string) [][]float64 {
+/*
+Returns a two-dimensional array that contains One-Hot encoded labels
+Label values are restricted to int values from 0 to 9.
+*/
+func PrepareTrainLabels(rawData [][]string) ([][]float64, error) {
 	labels := make([][]float64, len(rawData))
 	for i, _ := range rawData {
 		labels[i] = make([]float64, 10)
@@ -244,13 +215,18 @@ func prepareTrainLabels(rawData [][]string) [][]float64 {
 			panic(err)
 		}
 		if value < 0 || value > 9 {
-			panic("Label is not in allowed space: " + strconv.Itoa(value))
+			return nil, errors.New("Label is not in allowed space (0-9): " + strconv.Itoa(value))
 		}
 		labels[i][value] = 0.999
 	}
-	return labels
+	return labels, nil
 }
-func prepareTestLabels(rawData [][]string) []int {
+
+/*
+Returns a one-dimensional array that contains the label values.
+Label values are restricted to int values from 0 to 9.
+*/
+func PrepareTestLabels(rawData [][]string) ([]int, error) {
 	labels := make([]int, len(rawData))
 	for i, _ := range rawData {
 		value, err := strconv.Atoi(rawData[i][0])
@@ -258,14 +234,17 @@ func prepareTestLabels(rawData [][]string) []int {
 			panic(err)
 		}
 		if value < 0 || value > 9 {
-			panic("Label is not in allowed space: " + strconv.Itoa(value))
+			return nil, errors.New("Label is not in allowed space (0-9): " + strconv.Itoa(value))
 		}
 		labels[i] = value
 	}
-	return labels
+	return labels, nil
 }
 
-func prepareDataset(rawData [][]string) [][]float64 {
+/*
+Normalizes pixel values to the range (0,1).
+*/
+func PrepareDataset(rawData [][]string) ([][]float64, error) {
 	outputData := make([][]float64, len(rawData))
 	for i, _ := range rawData {
 		outputData[i] = make([]float64, len(rawData[i])-1)
@@ -275,32 +254,23 @@ func prepareDataset(rawData [][]string) [][]float64 {
 			} else {
 				value, err := strconv.Atoi(rawData[i][j])
 				if err != nil {
-					panic(err)
+					return nil, err
 				}
 				outputData[i][j-1] = ((float64(value) / 255.0) * 0.999) + 0.001
 			}
 		}
 	}
-	return outputData
+	return outputData, nil
 }
 
-func main2() {
-	array := []int{1, 2, 3, 4, 5, 6, 7}
-	for i := len(array) - 1; i >= 0; i-- {
-		//for i, _ := range array {
-		j := rand.Intn(i + 1)
-		array[i], array[j] = array[j], array[i]
-	}
-	fmt.Println(array)
-}
-
-func main() {
+func Main() {
 	var inputNodes = 784
 	var hiddenNodes = 200
 	var outputNodes = 10
 	var learningRate float64 = 0.005
-	var epochs = 0
+	var epochs = 40
 	var numValidation = 5000
+	var checkpointPath string = "./"
 	var n *NeuralNetwork = NewNeuralNetwork(inputNodes, hiddenNodes, outputNodes, learningRate)
 	file, err := os.Open("/mnt/data/Datasets/mnist/mnist_train.csv")
 	if err != nil {
@@ -308,23 +278,34 @@ func main() {
 	}
 	reader := csv.NewReader(file)
 	records, _ := reader.ReadAll()
-	trainData := prepareDataset(records)
-	trainLabels := prepareTrainLabels(records)
+	trainData, err := PrepareDataset(records)
+	trainLabels, err := PrepareTrainLabels(records)
 	validationData := trainData
-	validationLabels := prepareTestLabels(records)
+	validationLabels, err := PrepareTestLabels(records)
 	file, err = os.Open("/mnt/data/Datasets/mnist/mnist_test.csv")
 	if err != nil {
 		panic(err)
 	}
 	reader = csv.NewReader(file)
 	records, _ = reader.ReadAll()
-	//testData := prepareDataset(records)
-	//testLabels := prepareTestLabels(records)
+	testData, err := PrepareDataset(records)
+	testLabels, err := PrepareTestLabels(records)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		fmt.Printf("Interrupt detected. Storing Weights under %s", checkpointPath)
+		n.StoreNeuralNet(checkpointPath + "neuralnet.weights")
+		fmt.Println(" Exiting.")
+		os.Exit(1)
+	}()
 
 	println("Beginning with Training")
 	for epoch := 0; epoch < epochs; epoch++ {
 		print("Epoch ", epoch+1)
 		// Randomly Shuffle (Fisher–Yates shuffle):
+		// TODO: Currently, shuffling destroys the training effect. Reason unknown
 		//for i := len(trainData) - 1; i >= 0; i-- {
 		//	j := rand.Intn(i + 1)
 		//	trainData[i], trainData[j] = trainData[j], trainData[i]
@@ -341,15 +322,10 @@ func main() {
 		fmt.Println("accuracy:", accuracy)
 	}
 
+	n.StoreNeuralNet(fmt.Sprintf("%sneuralnet.weights", checkpointPath))
 	println("Beginning with Testing")
-	//correct, length := n.Validate(testData, testLabels)
-	//accuracy := float64(correct) / float64(length)
-	//println("Accuracy: ", accuracy)
+	correct, length := n.Validate(testData, testLabels)
+	accuracy := float64(correct) / float64(length)
+	println("Accuracy: ", accuracy)
 
-	n.StoreWeights(fmt.Sprintf("weights_epoch_%b_accuracy_%e.nn", epochs, 0.0))       //accuracy))
-	n, err = LoadWeights(fmt.Sprintf("weights_epoch_%b_accuracy_%e.nn", epochs, 0.0)) //accuracy))
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(n.Who)
 }

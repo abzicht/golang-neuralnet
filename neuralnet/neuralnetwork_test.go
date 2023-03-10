@@ -1,4 +1,4 @@
-package main
+package neuralnet
 
 import "testing"
 
