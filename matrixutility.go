@@ -1,4 +1,4 @@
-package neuralnet
+package main
 
 /**
 This module offers basic matrix operations. Matrices are represented as [][]float64 slices.
