@@ -65,3 +65,24 @@ func MatrixOperation(matrixA, matrixB [][]float64, operator func(float64, float6
 	}
 	return outMatrix
 }
+
+/*
+Returns the top level index of the subarray with the highest value
+*/
+func Argmax(values [][]float64) int {
+	curMax := values[0][0]
+	index := 0
+	for i, _ := range values {
+		localMax := values[i][0]
+		for j, _ := range values[i] {
+			if values[i][j] > localMax {
+				localMax = values[i][j]
+			}
+		}
+		if localMax > curMax {
+			curMax = localMax
+			index = i
+		}
+	}
+	return index
+}

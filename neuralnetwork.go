@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"golang.org/x/exp/rand"
 	"gonum.org/v1/gonum/stat/distuv"
 	"gopkg.in/yaml.v3"
@@ -92,6 +93,9 @@ func expit(x float64) float64 {
 	return 1 / (1 + math.Exp(-x))
 }
 
+/*
+Applies the expit function on the values of a two-dimensional array and returns the new array.
+*/
 func ActivationFunction(array [][]float64) [][]float64 {
 	var outArray = make([][]float64, len(array))
 	for i, _ := range outArray {
@@ -106,7 +110,7 @@ func ActivationFunction(array [][]float64) [][]float64 {
 /*
 Performs a training step for a single sample. Returns a new neural network object that contains the new training progress
 
-inputs: image, in the form of a single array
+inputs: image, in the form of a flat array
 targets: one-hot encoded target value (should be in [0.0001,0.9999]
 */
 func (n NeuralNetwork) Train(inputs []float64, targets []float64) *NeuralNetwork {
@@ -140,7 +144,49 @@ func (n NeuralNetwork) Train(inputs []float64, targets []float64) *NeuralNetwork
 		func(a float64, b float64) float64 {
 			return a + n.Learningrate*b
 		})
+	/*
+		Keep it functional: computations are put into a new object
+	*/
 	return &NeuralNetwork{Inodes: n.Inodes, Hnodes: n.Hnodes, Onodes: n.Onodes, Learningrate: n.Learningrate, TrainingStep: n.TrainingStep + 1, Wih: wih, Who: who}
+}
+
+/*
+Trains a neural net on inputs for a given number of epochs. Performs validation and prints out validation
+accuracy if validation data is provided and verbose is true.
+Returns the trained neural network.
+Stops training and returns current progress whenever the channel "cancel" is being closed
+*/
+func (n NeuralNetwork) TrainEpochs(inputs, targets, validation [][]float64, validationLabels []int, epochs int, cancel chan any, verbose bool) *NeuralNetwork {
+
+	for epoch := 0; epoch < epochs; epoch++ {
+		if verbose {
+			print("Epoch ", epoch+1)
+		}
+		// Randomly Shuffle the dataset (Fisher–Yates algorithm):
+		// TODO: Currently, shuffling destroys the training effect. Reason unknown
+		//for i := len(inputs) - 1; i > 0; i-- {
+		//	j := rand.Intn(i + 1)
+		//	inputs[i], inputs[j] = inputs[j], inputs[i]
+		//	targets[i], targets[j] = targets[j], targets[i]
+		//}
+		for i, _ := range inputs {
+			n = *n.Train(inputs[i], targets[i])
+		}
+		if verbose && validation != nil {
+			print(" done. Validation ")
+			correct, length := n.Validate(validation, validationLabels)
+			accuracy := float64(correct) / float64(length)
+			fmt.Println("accuracy:", accuracy)
+		}
+		// check if the channel is still open
+		if len(cancel) != 0 {
+			if verbose {
+				fmt.Println("Interrupt detected. Stopping training.")
+			}
+			break
+		}
+	}
+	return &n
 }
 
 /*
@@ -157,10 +203,10 @@ func (n NeuralNetwork) Query(inputs []float64) [][]float64 {
 
 /*
 Returns the number of correctly classified samples and the number of provided samples
-TODO: Parallelize
+Optional TODO: Parallelize
 */
 func (n NeuralNetwork) Validate(inputs [][]float64, labels []int) (int, int) {
-	classifications := []float64{}
+	var classifications []float64
 	var correct int = 0
 	for i, _ := range inputs {
 		outputs := n.Query(inputs[i])
@@ -172,27 +218,6 @@ func (n NeuralNetwork) Validate(inputs [][]float64, labels []int) (int, int) {
 		}
 	}
 	return correct, len(classifications)
-}
-
-/*
-Returns the top level index of the subarray with the highest value
-*/
-func Argmax(values [][]float64) int {
-	curMax := values[0][0]
-	index := 0
-	for i, _ := range values {
-		localMax := values[i][0]
-		for j, _ := range values[i] {
-			if values[i][j] > localMax {
-				localMax = values[i][j]
-			}
-		}
-		if localMax > curMax {
-			curMax = localMax
-			index = i
-		}
-	}
-	return index
 }
 
 /*
