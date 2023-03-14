@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type NeuralNetwork struct {
@@ -38,8 +39,8 @@ func NewNeuralNetwork(inodes, hnodes, onodes int, learningrate float64) *NeuralN
 Creates a 2D matrix with shape "rows" x "columns". Fills default values using the fill function.
 If no fill function is provided, matrix is initialized without values.
 */
-func CreateWeights(rows, columns int, fill func() float64) [][]float64 {
-	var data [][]float64 = make([][]float64, rows)
+func CreateWeights(rows, columns int, fill func() float64) (data [][]float64) {
+	data = make([][]float64, rows)
 	for i, _ := range data {
 		data[i] = make([]float64, columns)
 		if fill != nil {
@@ -48,7 +49,7 @@ func CreateWeights(rows, columns int, fill func() float64) [][]float64 {
 			}
 		}
 	}
-	return data
+	return
 }
 
 /*
@@ -163,12 +164,11 @@ func (n NeuralNetwork) TrainEpochs(inputs, targets, validation [][]float64, vali
 			print("Epoch ", epoch+1)
 		}
 		// Randomly Shuffle the dataset (Fisher–Yates algorithm):
-		// TODO: Currently, shuffling destroys the training effect. Reason unknown
-		//for i := len(inputs) - 1; i > 0; i-- {
-		//	j := rand.Intn(i + 1)
-		//	inputs[i], inputs[j] = inputs[j], inputs[i]
-		//	targets[i], targets[j] = targets[j], targets[i]
-		//}
+		for i := len(inputs) - 1; i > 0; i-- {
+			j := rand.Intn(i + 1)
+			inputs[i], inputs[j] = inputs[j], inputs[i]
+			targets[i], targets[j] = targets[j], targets[i]
+		}
 		for i, _ := range inputs {
 			n = *n.Train(inputs[i], targets[i])
 		}
@@ -222,21 +222,22 @@ func (n NeuralNetwork) Validate(inputs [][]float64, labels []int) (int, int) {
 
 /*
 Returns a two-dimensional array that contains One-Hot encoded labels
-Label values are restricted to int values from 0 to 9.
+Label values are restricted to int values from 0 to labelMax.
 */
-func PrepareTrainLabels(rawData [][]string) ([][]float64, error) {
+func PrepareTrainLabels(rawData [][]string, labelMax int) ([][]float64, error) {
 	labels := make([][]float64, len(rawData))
+	numLabels := labelMax + 1
 	for i, _ := range rawData {
-		labels[i] = make([]float64, 10)
-		for k := 0; k < 10; k++ {
+		labels[i] = make([]float64, numLabels)
+		for k := 0; k < numLabels; k++ {
 			labels[i][k] = 0
 		}
-		value, err := strconv.Atoi(rawData[i][0])
+		value, err := strconv.Atoi(strings.Trim(rawData[i][0], " "))
 		if err != nil {
 			panic(err)
 		}
-		if value < 0 || value > 9 {
-			return nil, errors.New("Label is not in allowed space (0-9): " + strconv.Itoa(value))
+		if value < 0 || value > labelMax {
+			return nil, errors.New("Label is not in allowed space: " + strconv.Itoa(value))
 		}
 		labels[i][value] = 0.999
 	}
@@ -247,15 +248,15 @@ func PrepareTrainLabels(rawData [][]string) ([][]float64, error) {
 Returns a one-dimensional array that contains the label values.
 Label values are restricted to int values from 0 to 9.
 */
-func PrepareTestLabels(rawData [][]string) ([]int, error) {
+func PrepareTestLabels(rawData [][]string, labelMax int) ([]int, error) {
 	labels := make([]int, len(rawData))
 	for i, _ := range rawData {
-		value, err := strconv.Atoi(rawData[i][0])
+		value, err := strconv.Atoi(strings.Trim(rawData[i][0], " "))
 		if err != nil {
 			panic(err)
 		}
-		if value < 0 || value > 9 {
-			return nil, errors.New("Label is not in allowed space (0-9): " + strconv.Itoa(value))
+		if value < 0 || value > labelMax {
+			return nil, errors.New("Label is not in allowed space: " + strconv.Itoa(value))
 		}
 		labels[i] = value
 	}
@@ -273,7 +274,7 @@ func PrepareDataset(rawData [][]string) ([][]float64, error) {
 			if j == 0 {
 				continue
 			} else {
-				value, err := strconv.Atoi(rawData[i][j])
+				value, err := strconv.Atoi(strings.Trim(rawData[i][j], " "))
 				if err != nil {
 					return nil, err
 				}
