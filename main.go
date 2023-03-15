@@ -63,7 +63,9 @@ func TrainAndTest(checkpointFile string) {
 	var outputNodes = 10
 	var learningRate float64 = 0.005
 	var epochs = 50
-	var numValidation = 5000
+	// The first numValidation entries of the test dataset will be used for
+	// validation
+	var numValidation = 500
 	var n *NeuralNetwork = NewNeuralNetwork(inputNodes, hiddenNodes, outputNodes, learningRate)
 	file, err := os.Open(trainFile)
 	if err != nil {
@@ -73,11 +75,6 @@ func TrainAndTest(checkpointFile string) {
 	records, _ := reader.ReadAll()
 	trainData, err := PrepareDataset(records)
 	trainLabels, err := PrepareTrainLabels(records, 9)
-	var validationData [][]float64 = make([][]float64, len(trainData))
-	for i, _ := range trainData {
-		validationData[i] = trainData[i]
-	}
-	validationLabels, err := PrepareTestLabels(records, 9)
 	file, err = os.Open(testFile)
 	if err != nil {
 		panic(err)
@@ -85,7 +82,7 @@ func TrainAndTest(checkpointFile string) {
 	reader = csv.NewReader(file)
 	records, _ = reader.ReadAll()
 	testData, err := PrepareDataset(records)
-	testLabels, err := PrepareTestLabels(records, 1)
+	testLabels, err := PrepareTestLabels(records, 9)
 
 	// channel c listens for keyboard interrupts and closes the channel cancel. This in return tells n.TrainEpochs to stop training.
 	c := make(chan os.Signal, 1)
@@ -97,12 +94,12 @@ func TrainAndTest(checkpointFile string) {
 	}()
 
 	fmt.Println("Beginning with Training")
-	n = n.TrainEpochs(trainData, trainLabels, validationData[:numValidation], validationLabels[:numValidation], epochs, cancel, true)
+	n = n.TrainEpochs(trainData, trainLabels, testData[:numValidation], testLabels[:numValidation], epochs, cancel, true)
 
 	fmt.Printf("Storing Weights under %s.\n", checkpointFile)
 	n.StoreNeuralNet(checkpointFile)
 	fmt.Println("Beginning with Testing")
-	correct, length := n.Validate(testData, testLabels)
+	correct, length := n.Validate(testData[numValidation:], testLabels[numValidation:])
 	accuracy := float64(correct) / float64(length)
 	fmt.Println("Accuracy: ", accuracy)
 

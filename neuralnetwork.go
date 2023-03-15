@@ -97,15 +97,15 @@ func expit(x float64) float64 {
 /*
 Applies the expit function on the values of a two-dimensional array and returns the new array.
 */
-func ActivationFunction(array [][]float64) [][]float64 {
-	var outArray = make([][]float64, len(array))
-	for i, _ := range outArray {
-		outArray[i] = make([]float64, len(array[i]))
-		for j, _ := range outArray[i] {
-			outArray[i][j] = expit(array[i][j])
+func ActivationFunction(matrix [][]float64) (outMatrix [][]float64) {
+	outMatrix = make([][]float64, len(matrix))
+	for i, _ := range outMatrix {
+		outMatrix[i] = make([]float64, len(matrix[i]))
+		for j, _ := range outMatrix[i] {
+			outMatrix[i][j] = expit(matrix[i][j])
 		}
 	}
-	return outArray
+	return
 }
 
 /*

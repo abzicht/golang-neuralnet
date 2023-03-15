@@ -7,7 +7,7 @@ The network is defined in [neuralnetwork.go](neuralnetwork.go). An example for c
 The network is prepared to work with the MNIST dataset in CSV format (find
   it [here](https://pjreddie.com/projects/mnist-in-csv/)).
 
-The dataset contains 60,000 grayscale images (28x28 pixels) for training and 10,000 grayscale images for testing.
+The dataset contains 60,000 greyscale images (28x28 pixels) for training and 10,000 greyscale images for testing.
 
 [imageutil.go](imageutil.go) provides functionality to convert from CSV to PNG. It also provides a function for
   preparing custom images that are to be passed to the neural network.
