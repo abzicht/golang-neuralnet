@@ -1,6 +1,6 @@
 # Golang NeuralNet
 
-This is a rough implementation of a very simple Neural Network that showcases the basics of Machine Learning.
+This is a rough implementation of a very simple Neural Network that showcases the basics of Machine Learning. You can find an extensive description of this network [here](https://finkem.de/blog/post/golang-neuralnetwork/).
 
 The network is defined in [neuralnetwork.go](neuralnetwork.go). An example for calling the network is found in [main.go](main.go).
 
