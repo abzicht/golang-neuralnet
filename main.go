@@ -27,9 +27,9 @@ func ConvertToPng() {
 Loads an image file and performs classifications.
 */
 func LoadAndClassify(checkpointFile string) {
-	var imageFile = "./images/0.png"
-
-	net, err := LoadNeuralNet(checkpointFile)
+	var imageFile = "./images/1.png"
+	file, err := os.Open(checkpointFile)
+	net, err := LoadNeuralNet(file)
 	if err != nil {
 		panic(err)
 	}
@@ -48,14 +48,6 @@ func LoadAndClassify(checkpointFile string) {
 Performs training and testing, stores weights after training
 */
 func TrainAndTest(checkpointFile string) {
-	//var trainFile = "/mnt/data/Datasets/dummy/train.csv"
-	//var testFile = "/mnt/data/Datasets/dummy/test.csv"
-	//var inputNodes = 500
-	//var hiddenNodes = 200
-	//var outputNodes = 2
-	//var learningRate float64 = 0.005
-	//var epochs = 10
-	//var numValidation = 5000
 	var trainFile = "/mnt/data/Datasets/mnist/mnist_train.csv"
 	var testFile = "/mnt/data/Datasets/mnist/mnist_test.csv"
 	var inputNodes = 784
@@ -90,6 +82,7 @@ func TrainAndTest(checkpointFile string) {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
+		fmt.Println("Interrupt detected. Stopping training after current epoch.")
 		cancel <- nil
 	}()
 
@@ -97,10 +90,14 @@ func TrainAndTest(checkpointFile string) {
 	n = n.TrainEpochs(trainData, trainLabels, testData[:numValidation], testLabels[:numValidation], epochs, cancel, true)
 
 	fmt.Printf("Storing Weights under %s.\n", checkpointFile)
-	n.StoreNeuralNet(checkpointFile)
+	weightsFile, err := os.Create(checkpointFile)
+	_, err = n.StoreNeuralNet(weightsFile)
+	if err != nil {
+		panic(err)
+	}
 	fmt.Println("Beginning with Testing")
-	correct, length := n.Validate(testData[numValidation:], testLabels[numValidation:])
-	accuracy := float64(correct) / float64(length)
+	correct := n.Validate(testData[numValidation:], testLabels[numValidation:])
+	accuracy := float64(correct) / float64(len(testLabels[numValidation:]))
 	fmt.Println("Accuracy: ", accuracy)
 
 }

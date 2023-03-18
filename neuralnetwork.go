@@ -3,13 +3,14 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
+	"math"
+	"strconv"
+	"strings"
+
 	"golang.org/x/exp/rand"
 	"gonum.org/v1/gonum/stat/distuv"
 	"gopkg.in/yaml.v3"
-	"math"
-	"os"
-	"strconv"
-	"strings"
 )
 
 type NeuralNetwork struct {
@@ -60,31 +61,25 @@ func (n NeuralNetwork) GetTrainingSteps() uint64 {
 }
 
 /*
-Stores all neuralnet parameters in a YAML file.
+Writes all neuralnet parameters in YAML format to the writer.
 Compatible with LoadNeuralNet.
 */
-func (n NeuralNetwork) StoreNeuralNet(filePath string) error {
+func (n NeuralNetwork) StoreNeuralNet(writer io.Writer) (numWritten int, err error) {
 	yamlData, err := yaml.Marshal(&n)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	err = os.WriteFile(filePath, yamlData, 0644)
-	return err
+	numWritten, err = writer.Write(yamlData)
+	return
 }
 
 /*
-Loads a neural net stored in a yaml file located in `filePath`. Should have been created with StoreNeuralNet.
+Loads a neural net stored in a yaml file from a reader. Should have been created with StoreNeuralNet.
 */
-func LoadNeuralNet(filePath string) (*NeuralNetwork, error) {
-	var n NeuralNetwork
-	f, err := os.Open(filePath)
-	if err != nil {
-		return &n, err
-	}
-	defer f.Close()
-	decoder := yaml.NewDecoder(f)
+func LoadNeuralNet(reader io.Reader) (n *NeuralNetwork, err error) {
+	decoder := yaml.NewDecoder(reader)
 	err = decoder.Decode(&n)
-	return &n, err
+	return
 }
 
 /*
@@ -145,9 +140,7 @@ func (n NeuralNetwork) Train(inputs []float64, targets []float64) *NeuralNetwork
 		func(a float64, b float64) float64 {
 			return a + n.Learningrate*b
 		})
-	/*
-		Keep it functional: computations are put into a new object
-	*/
+	// Keep it functional: computations are put into a new object
 	return &NeuralNetwork{Inodes: n.Inodes, Hnodes: n.Hnodes, Onodes: n.Onodes, Learningrate: n.Learningrate, TrainingStep: n.TrainingStep + 1, Wih: wih, Who: who}
 }
 
@@ -158,7 +151,6 @@ Returns the trained neural network.
 Stops training and returns current progress whenever the channel "cancel" is being closed
 */
 func (n NeuralNetwork) TrainEpochs(inputs, targets, validation [][]float64, validationLabels []int, epochs int, cancel chan any, verbose bool) *NeuralNetwork {
-
 	for epoch := 0; epoch < epochs; epoch++ {
 		if verbose {
 			print("Epoch ", epoch+1)
@@ -174,15 +166,12 @@ func (n NeuralNetwork) TrainEpochs(inputs, targets, validation [][]float64, vali
 		}
 		if verbose && validation != nil {
 			print(" done. Validation ")
-			correct, length := n.Validate(validation, validationLabels)
-			accuracy := float64(correct) / float64(length)
+			correct := n.Validate(validation, validationLabels)
+			accuracy := float64(correct) / float64(len(validationLabels))
 			fmt.Println("accuracy:", accuracy)
 		}
 		// check if the channel is still open
 		if len(cancel) != 0 {
-			if verbose {
-				fmt.Println("Interrupt detected. Stopping training.")
-			}
 			break
 		}
 	}
@@ -202,10 +191,10 @@ func (n NeuralNetwork) Query(inputs []float64) [][]float64 {
 }
 
 /*
-Returns the number of correctly classified samples and the number of provided samples
-Optional TODO: Parallelize
+Performs classification and returns the number of correctly classified samples.
 */
-func (n NeuralNetwork) Validate(inputs [][]float64, labels []int) (int, int) {
+func (n NeuralNetwork) Validate(inputs [][]float64, labels []int) int {
+	// Optional TODO: Parallelize
 	var classifications []float64
 	var correct int = 0
 	for i, _ := range inputs {
@@ -217,7 +206,7 @@ func (n NeuralNetwork) Validate(inputs [][]float64, labels []int) (int, int) {
 			classifications = append(classifications, 0)
 		}
 	}
-	return correct, len(classifications)
+	return correct
 }
 
 /*
@@ -234,7 +223,7 @@ func PrepareTrainLabels(rawData [][]string, labelMax int) ([][]float64, error) {
 		}
 		value, err := strconv.Atoi(strings.Trim(rawData[i][0], " "))
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		if value < 0 || value > labelMax {
 			return nil, errors.New("Label is not in allowed space: " + strconv.Itoa(value))
@@ -253,7 +242,7 @@ func PrepareTestLabels(rawData [][]string, labelMax int) ([]int, error) {
 	for i, _ := range rawData {
 		value, err := strconv.Atoi(strings.Trim(rawData[i][0], " "))
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		if value < 0 || value > labelMax {
 			return nil, errors.New("Label is not in allowed space: " + strconv.Itoa(value))
